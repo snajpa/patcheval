@@ -1,0 +1,32 @@
+KERNEL PATCH EVALUATION
+
+Exclude Categories:
+- Filesystems (all blockdev-backed filesystems, like ext4, xfs, btrfs, f2fs, etc.)
+- Graphics
+- drm, display
+- sound, audio, usb, media drivers
+- ARM, MIPS, PowerPC, s390, RISC-V
+End of Exclude Categories.
+
+Interest Areas:
++ Namespaces, Cgroups
++ Process management
++ Resource isolation
++ Networking core + TCP/IP stack + ethernet drivers
++ Netfilter
+End of Interest Areas.
+
+Evaluation Procedure:
+- Check the patch for any of the Exclusion Categories.
+- Check the patch for any of the Interest Areas.
+- If the patch is not in the Exclusion Categories and is in the Interest Areas, ACCEPT the patch.
+- If the patch is in the Exclusion Categories, IGNORE the patch.
+- IGNORE all other patches.
+End of Evaluation Procedure.
+
+Externally supplied commit summary evaluation follows:
+<%= @params[:message_short] %>
+<%= @params[:plan_response_first] %>
+End of Externally supplied commit summary evaluation.
+
+Outcome (IGNORE/ACCEPT):

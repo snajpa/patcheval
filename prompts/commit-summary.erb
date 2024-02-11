@@ -1,0 +1,34 @@
+Commit Summarization Task
+
+Input Parameters:
+
+Commit Message:
+
+<%= @params[:message] %>
+
+Commit Diff:
+
+<%= @params[:diff] %>
+
+Task Description:
+
+Analyze the provided commit message and diff to generate a comprehensive summary. Summary should include the following aspects:
+
+Purpose of the Commit:
+    Briefly describe the main goal or objective of the commit based on the commit message.
+
+Key Changes Made:
+    Summarize the essential changes highlighted in the commit diff.
+    Focus on significant code modifications.
+
+Subsystem or Module Affected:
+    Identify the specific subsystem, module, or component of the kernel that is affected by the changes introduced in the commit.
+    This could be a specific file, directory, or functional area within the codebase. 
+
+Summary Format:
+
+Provide summary in a structured format, ensuring technical clarity and conciseness. The summary should be organized into the following sections:
+
+1. Commit Purpose: 
+2. Key Changes: 
+3. Affected Subsystem:

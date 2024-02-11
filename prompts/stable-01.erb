@@ -1,0 +1,22 @@
+Assessment of Linux Kernel Patch for LTS Stable Backport Compatibility
+
+For This Externally Supplied Commit Summary Evaluation:
+
+=======================================
+<%= @params[:message_short] %>
+
+<%= @params[:plan_response_first] %>
+=======================================
+
+Backporting Criteria:
+
+    Impact on stability and security.
+    Compatibility with the LTS kernel API/ABI.
+    Relevance to broad sets of users.
+    Absence of new features unless critical for hardware support or security.
+
+Request:
+Analyze the provided patch in detail, considering the specified criteria for backporting to a stable kernel branch. Evaluate whether the patch exclusively includes fixes for security vulnerabilities, regressions, and critically important hardware support without introducing new features, unless they are essential for addressing security or hardware compatibility issues. Consider the implications for kernel stability, security, and API/ABI compatibility.
+
+Answer Format:
+Provide a simple "YES" or "NO" answer. If the patch is not suitable for backporting, provide a brief explanation of the reasons.

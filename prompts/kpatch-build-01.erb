@@ -1,14 +1,19 @@
 DYNUP KPATCH EVALUATION REPORT
 
-For the following patch
+With the following patch:
 
 <%= @params[:diff] %>
 
-Report whether the patch violates kpatch-build rules for easy Linux live patch build.
+Evaluate this Linux kernel patch for kpatch-build automatic live patching, focus on these concise criteria:
 
-REPORT TEMPLATE (the only valid output is COMPATIBLE=YES or COMPATIBLE=NO)
-COMPATIBLE=(YES or NO)
+Compatibility with kpatch-build: The patch must be compatible with the kpatch-build process and generate a patch module through comparison of binaries.
 
-[optional short explanation of the result, if needed]
+Limitations: Be aware of kpatch's limitations, such as no support for patches that modify statically allocated structs, init functions, functions in vdso, or functions missing a fentry call.
 
-FINAL REPORT
+By adhering to these streamlined criteria, you can effectively assess the suitability of a kernel patch for live patching with kpatch-build.
+
+REPORT TEMPLATE:
+COMPLIANT=YES or COMPLIANT=NO
+[optional concise explanation]
+
+produce a FINAL REPORT: COMPLIANT=YES or COMPLIANT=NO

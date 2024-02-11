@@ -1,24 +1,48 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    coderay (1.1.3)
+    ethon (0.16.0)
+      ffi (>= 1.15.0)
     faraday (2.9.0)
       faraday-net_http (>= 2.0, < 3.2)
     faraday-net_http (3.1.0)
       net-http
+    faraday-typhoeus (1.1.0)
+      faraday (~> 2.0)
+      typhoeus (~> 1.4)
+    ffi (1.16.3)
+    method_source (1.0.0)
     net-http (0.4.1)
       uri
-    ollama-ai (1.0.1)
+    ollama-ai (1.2.0)
       faraday (~> 2.9)
+      faraday-typhoeus (~> 1.1)
+    paint (2.3.0)
+    pp (0.5.0)
+      prettyprint
+    prettyprint (0.2.0)
+    pry (0.14.2)
+      coderay (~> 1.1)
+      method_source (~> 1.0)
     rugged (1.7.2)
+    typhoeus (1.4.1)
+      ethon (>= 0.9.0)
+    unicode-display_width (2.5.0)
     uri (0.13.0)
+    whirly (0.3.0)
+      unicode-display_width (>= 1.1)
 
 PLATFORMS
-  ruby
   x86_64-linux
 
 DEPENDENCIES
   ollama-ai (~> 1.0)
+  paint (~> 2.3)
+  pp (~> 0.5.0)
+  pry (~> 0.14.2)
   rugged (~> 1.7)
+  whirly (~> 0.3.0)
 
 BUNDLED WITH
    2.5.6
