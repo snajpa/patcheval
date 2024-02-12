@@ -1,9 +1,7 @@
 #!/usr/bin/env ruby
 
 require 'rugged'
-require 'ollama-ai'
-require 'ollama-ai/errors'
-
+require 'net/http'
 require 'json'
 require 'erb'
 require 'csv'
@@ -14,33 +12,33 @@ tests = {
     ok_regex: /YES/,
     fail_regex: /NO/,
     patch_part_policy: "OR", # OR or AND
-    repair_prompt: "Invalid response, reply only pure YES or NO, does this patch fix a bug:",
+    repair_prompt: "Invalid response, reply 'YES' or 'NO', does this patch fix a bug:",
     options: {
       #model: 'llama2:7b',
-      model: 'llama2:70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
+      model: 'miqu-1-70b',
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
     },
   },
   "stable-01" => {
     ok_regex: /YES/,
     fail_regex: /NO/,
     patch_part_policy: "OR", # OR or AND
-    repair_prompt: "Invalid response, reply only pure YES or NO, backport to stable:",
+    repair_prompt: "Invalid response, reply 'YES' or 'NO', backport to stable:",
     options: {
       #model: 'llama2:7b',
-      model: 'llama2:70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
+      model: 'miqu-1-70b',
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
     }
   },
   "security-01" => {
     ok_regex: /YES/,
     fail_regex: /NO/,
     patch_part_policy: "OR", # OR or AND
-    repair_prompt: "Invalid response, reply only pure YES or NO:",
+    repair_prompt: "Invalid response, reply 'YES' or 'NO':",
     options: {
       #model: 'llama2:7b',
-      model: 'llama2:70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
+      model: 'miqu-1-70b',
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
     }
   },
   "kpatch-build-01" => {
@@ -50,7 +48,7 @@ tests = {
     repair_prompt: "Incomplete response, reply must contain explicit COMPLIANT=YES or COMPLIANT=NO:",
     options: {
       #model: 'llama2:7b',
-      model: 'llama2:70b',
+      model: 'miqu-1-70b',
       options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.4, seed: 42 }
     }
   },
@@ -60,29 +58,29 @@ tests = {
     patch_part_policy: "AND", # OR or AND
     repair_prompt: "Invalid response, reply YES or NO, no other response is valid:",
     options: {
-      model: 'llama2:70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 32, temperature: 0.6, seed: 42 }
+      model: 'miqu-1-70b',
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
     }
   },
   "commit-summary" => {
     options: {
-      model: 'llama2:70b', #-code-q5_0
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 32, temperature: 0.7, seed: 42 }
+      model: 'miqu-1-70b', #-code-q5_0
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
     }
   },
   "vpsadminos-01" => {
     ok_regex: /ACCEPT/,
     fail_regex: /IGNORE/,
     patch_part_policy: "OR", # OR or AND
-    repair_prompt: "Conclusion ACCEPTED/IGNORED (retry %d/%d):",
+    repair_prompt: "Conclusion 'ACCEPT'/'IGNORE' (retry %d/%d):",
     options: {
-      model: 'llama2:70b', #-code-q5_0
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 128, temperature: 0.3, seed: 42 }
+      model: 'miqu-1-70b', #-code-q5_0
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
     }
   },
 };
-
-plan = ["commit-summary", "vpsadminos-01", "bug-01", "stable-01", "security-01", "kpatch-build-01", "kpatch-build-02"]
+plan = ["vpsadminos-01"]
+#plan = ["vpsadminos-01", "bug-01", "stable-01", "kpatch-build-01", "kpatch-build-02", "security-01"]
 #plan = ["kpatch-build-01"]
 #plan = ["commit-summary", "vpsadminos-01"]
 skip_commit_on_consecutive_fails = 1
@@ -90,11 +88,9 @@ skip_commit_on_consecutive_fails = 1
 results = {}
 
 Signal.trap("INT") do
-  puts
   exit 1
 end
 Signal.trap("TERM") do
-  puts
   exit 1
 end
 
@@ -141,30 +137,18 @@ class PromptGenerator
   end
 end
 
-ollama = Ollama.new(
-  credentials: { address: 'http://localhost:11434' },
-  options: { server_sent_events: true,
-    connection: {
-      request: {
-        timeout: 60,
-        open_timeout: 60,
-        read_timeout: 1800,
-        write_timeout: 60
-      }
-    }
-  }
-)
-
 # Replace these with the paths to your repository and the tags you want to walk between
 repo_path = '/home/snajpa/linux'
 
 start_ref, end_ref = ARGV
 
-unless start_ref && end_ref
+unless start_ref
   puts "Error: Please provide start and end refs/tags/branches/commits."
-  puts "Usage: patcheval [options] <start_ref> <end_ref>"
+  puts "Usage: patcheval <start_ref> [<end_ref>]"
   exit(1)
 end
+
+end_ref = start_ref unless end_ref
 
 def find_commit(repo, user_input)    
   # Attempt to resolve commit directly from SHA or through references
@@ -277,10 +261,15 @@ walker.each do |commit|
     retries = 0
     begin
       retries += 1
-      result = ollama.generate(test[:options].merge({prompt: prompt, context: context, stream: false}))
-      response = result.last["response"]
+      url = URI.parse('http://localhost:11434/api/generate')
+      http = Net::HTTP.new(url.host, url.port)
+      request = Net::HTTP::Post.new(url.path)
+      request.content_type = 'application/json'
+      request.body = test[:options].merge({prompt: prompt, context: context, stream: false}).to_json
+      result = JSON.parse(http.request(request).body)
+      response = result["response"]
       response_first = response if test_n == 1
-      context = result.last["context"]
+      context = result  ["context"]
       log_verbose "\n\n" + prompt
       log_verbose "\n" + response + "\n\n"
       log_verbose "prompt length: #{prompt.length}"
