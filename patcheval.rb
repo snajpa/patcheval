@@ -9,25 +9,25 @@ require 'fileutils'
 
 tests = {
   "bug-01" => {
-    ok_regex: /YES/,
-    fail_regex: /NO/,
+    ok_regex: /BUGFIX/,
+    fail_regex: /NOT/,
     patch_part_policy: "OR", # OR or AND
-    repair_prompt: "Invalid response, reply 'YES' or 'NO', does this patch fix a bug:",
+    repair_prompt: "Invalid response, reply 'BUGFIX' if this patch fixes a bug or 'NOT' otherwise:",
     options: {
-      #model: 'llama2:7b',
+      #model: 'llama2:70b',
       model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
     },
   },
   "stable-01" => {
-    ok_regex: /YES/,
-    fail_regex: /NO/,
+    ok_regex: /BACKPORT/,
+    fail_regex: /SKIP/,
     patch_part_policy: "OR", # OR or AND
-    repair_prompt: "Invalid response, reply 'YES' or 'NO', backport to stable:",
+    repair_prompt: "Invalid response, reply 'BACKPORT' or 'SKIP', backport to stable:",
     options: {
-      #model: 'llama2:7b',
+      #model: 'llama2:70b',
       model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
+      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
     }
   },
   "security-01" => {
@@ -36,7 +36,7 @@ tests = {
     patch_part_policy: "OR", # OR or AND
     repair_prompt: "Invalid response, reply 'YES' or 'NO':",
     options: {
-      #model: 'llama2:7b',
+      #model: 'llama2:70b',
       model: 'miqu-1-70b',
       options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
     }
@@ -47,7 +47,7 @@ tests = {
     patch_part_policy: "AND", # OR or AND
     repair_prompt: "Incomplete response, reply must contain explicit COMPLIANT=YES or COMPLIANT=NO:",
     options: {
-      #model: 'llama2:7b',
+      #model: 'llama2:70b',
       model: 'miqu-1-70b',
       options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.4, seed: 42 }
     }
@@ -58,13 +58,15 @@ tests = {
     patch_part_policy: "AND", # OR or AND
     repair_prompt: "Invalid response, reply YES or NO, no other response is valid:",
     options: {
+      #model: 'llama2:70b',
       model: 'miqu-1-70b',
       options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
     }
   },
   "commit-summary" => {
     options: {
-      model: 'miqu-1-70b', #-code-q5_0
+      #model: 'llama2:70b',
+      model: 'miqu-1-70b',
       options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
     }
   },
@@ -74,25 +76,21 @@ tests = {
     patch_part_policy: "OR", # OR or AND
     repair_prompt: "Conclusion 'ACCEPT'/'IGNORE' (retry %d/%d):",
     options: {
-      model: 'miqu-1-70b', #-code-q5_0
+      #model: 'llama2:70b',
+      model: 'miqu-1-70b',
       options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
     }
   },
 };
-plan = ["vpsadminos-01"]
-#plan = ["vpsadminos-01", "bug-01", "stable-01", "kpatch-build-01", "kpatch-build-02", "security-01"]
+#plan = ["bug-01"]
+#plan = ["vpsadminos-01"]
+plan = ["bug-01", "stable-01", "vpsadminos-01", "security-01", "kpatch-build-02"]
 #plan = ["kpatch-build-01"]
 #plan = ["commit-summary", "vpsadminos-01"]
 skip_commit_on_consecutive_fails = 1
 
 results = {}
-
-Signal.trap("INT") do
-  exit 1
-end
-Signal.trap("TERM") do
-  exit 1
-end
+start_time = Time.now
 
 # Create log directory with UTF format of current time
 dir = Time.now.strftime('%Y-%m-%d_%H-%M-%S_%Z')
@@ -135,6 +133,58 @@ class PromptGenerator
     @params = params
     ERB.new(@test).result(binding)
   end
+end
+class Spinner
+  def initialize
+    #@spinner_chars = ['⣾','⣽','⣻','⢿','⡿','⣟','⣯','⣷']
+    @spinner_chars = ["⠁","⠂","⠄","⡀","⡈","⡐","⡠","⣀",
+                      "⣁","⣂","⣄","⣌","⣔","⣤","⣥","⣦",
+                      "⣮","⣶","⣷","⣿","⡿","⠿","⢟","⠟",
+                      "⡛","⠛","⠫","⢋","⠋","⠍","⡉","⠉",
+                      "⠑","⠡","⢁"]
+    @index = 0
+    @running = false
+    @printed = 0
+    @thread = nil
+  end
+
+  def start(length = 1)
+    return if @running
+    @running = true
+    @thread = Thread.new do
+      loop do
+        break unless @running
+
+        length.times { print "#{@spinner_chars[@index]}" }
+        @printed = length
+        @index = (@index + 1) % @spinner_chars.length
+        sleep 0.08
+        @printed.times { print "\b" }
+        @printed = 0
+      end
+    end
+  end
+
+  def stop
+    return unless @running
+
+    @running = false
+    @thread.join if @thread
+    @printed.times { print "\b" }
+    @printed = 0
+  end
+end
+spinner = Spinner.new
+
+Signal.trap("INT") do
+  spinner.stop
+  puts
+  exit 1
+end
+Signal.trap("TERM") do
+  spinner.stop
+  puts
+  exit 1
 end
 
 # Replace these with the paths to your repository and the tags you want to walk between
@@ -195,9 +245,12 @@ log "Commit test plan: #{plan.join(", ")}"
 log "Skip commit on consecutive fails: #{skip_commit_on_consecutive_fails}"
 log ""
 
+logn "Total commits: "
+spinner.start 5
 commit_count = 0
 walker.each { commit_count += 1 }
-log "Total commits: #{commit_count}"
+spinner.stop
+log commit_count
 log ""
 
 def response_ok?(response, ok_regex, fail_regex)
@@ -220,18 +273,19 @@ walker.sorting(Rugged::SORT_DATE | Rugged::SORT_TOPO | Rugged::SORT_REVERSE)
 walker.push(end_commit)
 walker.hide(start_commit)
 
+eta = 0
 walker.each do |commit|
+  test_n = 0
   commit_n += 1
   results[commit.oid] = {skipped: true, prompts: {}}
   next if commit.parents.size > 1 && commit.diff(nil).size == 0 # Skip merge commits with no diff
 
   fails = 0
-  log "#{Time.now.localtime} #{commit.oid} #{commit.message.lines.first.chomp} (#{commit_n}/#{commit_count})"
+  log "%s, %3d/%d,  ETA %s, %s %s" % [Time.now.localtime, commit_n, commit_count, Time.at(Time.now + eta), commit.oid, commit.message.lines.first.chomp]
   if commit.parents.size > 1
     log "Merge commit"
     next
   end
-  test_n = 0
   response_first = ""
   response = ""
   plan.each do |test_name|
@@ -240,9 +294,9 @@ walker.each do |commit|
     raise "Test not found: #{test_name}" if test.nil?
     starting = Time.now
     log_verbose "\n"
-    logn " test: %20s" % "#{test_name}"
+    logn " test: %20s" % "#{test_name} "
+    spinner.start 12
     prompt_generator = PromptGenerator.new(test_name)
-    #ok = run_test_on_commit(commit, test[:ok_regex], test[:fail_regex], test[:repair_prompt], prompt_generator, ollama, test[:options], )
     ok = test[:patch_part_policy] == "AND"
     diff = commit.diff
     patch_s = ""
@@ -251,12 +305,12 @@ walker.each do |commit|
     end
     prompts_length = 0
     responses_length = 0
-    prompt = prompt_generator.generate({diff: patch_s,
+    prompt = prompt_generator.generate({diff: patch_s.force_encoding("UTF-8"),
                                         commit: commit.oid,
-                                        message_short: commit.message.lines.first.chomp,
-                                        message: commit.message,
-                                        plan_response_prev: response,
-                                        plan_response_first: response_first})
+                                        message_short: commit.message.lines.first.chomp.force_encoding("UTF-8"),
+                                        message: commit.message.force_encoding("UTF-8"),
+                                        plan_response_prev: response.force_encoding("UTF-8"),
+                                        plan_response_first: response_first.force_encoding("UTF-8")})
     context = []
     retries = 0
     begin
@@ -290,6 +344,7 @@ walker.each do |commit|
         ok = nil
       end
     end
+    spinner.stop
     res = "unknown"
     if ok == true
       res = "ok"
@@ -301,11 +356,13 @@ walker.each do |commit|
     end
     ending = Time.now
     elapsed = ending - starting
+    running_time = ending - start_time
+    eta = running_time / commit_n * (commit_count - commit_n)
     logn " %10s " % res
     logn "%5.2fs" % elapsed
     logn "  in: %5d B" % prompts_length
     logn "  out: %5d B" % responses_length
-    logn "  %6.2f B/s\n" % ((prompts_length + responses_length) / elapsed)
+    logn "  %7.2f B/s\n" % ((prompts_length + responses_length) / elapsed)
     log_csv [commit.oid, commit.message.lines.first.chomp, test_name, res, prompts_length, responses_length, elapsed]
     results[commit.oid][:prompts][test_name] = {result: res, elapsed: elapsed}
     if !!skip_commit_on_consecutive_fails && ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
