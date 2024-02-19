@@ -1,6 +1,11 @@
 Evaluate Linux kernel commit for backporting to stable branches:
 
-Given the following Linux kernel commit details, evaluate its suitability for backporting to stable kernel branches. Ensure that the change does not introduce any new functionality or features and consider the 
+Given these Linux kernel commit details, evaluate its suitability for backporting to stable kernel branches:
+
+Commit message: <%= @params[:message] %>
+Commit diff: <%= @params[:diff] %>
+
+Evaluate the commit's suitability for backporting to stable kernel branches. Ensure that the change does not introduce any new functionality or features and consider the 
 following criteria in your assessment:
 - all new features and functionality must not be backported
 - only bug, regression or security fixes are eligible
@@ -8,7 +13,8 @@ following criteria in your assessment:
 - the change must be small enough to be easily backported
 - absolutely no risk of regression is tolerated.
 
-Change message: <%= @params[:message] %>
-Commit diff: <%= @params[:diff] %>
+Response template
+Outcome: (BACKPORT/SKIP)
+(explanation)
 
-RECOMMENDATION: Provide a single-word response (either 'BACKPORT' or 'SKIP') and nothing else. Do not provide any explanation, note or justification before or after this line.
+Outcome: 

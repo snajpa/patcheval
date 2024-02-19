@@ -2,12 +2,14 @@ GEM
   remote: https://rubygems.org/
   specs:
     rugged (1.7.2)
+    si (0.2.0)
 
 PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
   rugged (~> 1.7)
+  si (~> 0.2.0)
 
 BUNDLED WITH
    2.5.6

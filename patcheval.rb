@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+require 'si'
 require 'rugged'
 require 'net/http'
 require 'json'
@@ -7,87 +8,137 @@ require 'erb'
 require 'csv'
 require 'fileutils'
 
+# llama.cpp/build$ ./bin/server -m ~/models/miqu-1-70b/miqu-1-70b.q4_k_m.gguf -ts 10,13 -ngl 99 --mlock -b 1024 -mg 1 -c 4096
+
 tests = {
-  "bug-01" => {
+  'bug-01' => {
     ok_regex: /BUGFIX/,
     fail_regex: /NOT/,
-    patch_part_policy: "OR", # OR or AND
+    patch_part_policy: 'OR', # OR or AND
     repair_prompt: "Invalid response, reply 'BUGFIX' if this patch fixes a bug or 'NOT' otherwise:",
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
-    },
+    options: { n_predict: 5, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
   },
-  "stable-01" => {
+  'stable-01' => {
     ok_regex: /BACKPORT/,
     fail_regex: /SKIP/,
-    patch_part_policy: "OR", # OR or AND
+    patch_part_policy: 'OR', # OR or AND
     repair_prompt: "Invalid response, reply 'BACKPORT' or 'SKIP', backport to stable:",
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
-    }
+    options: { n_predict: 5, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
   },
-  "security-01" => {
+  'security-01' => {
     ok_regex: /YES/,
     fail_regex: /NO/,
-    patch_part_policy: "OR", # OR or AND
+    patch_part_policy: 'OR', # OR or AND
     repair_prompt: "Invalid response, reply 'YES' or 'NO':",
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
-    }
+    options: { n_predict: 5, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
   },
-  "kpatch-build-01" => {
+  'kpatch-build-01' => {
     ok_regex: /COMPLIANT=YES/,
     fail_regex: /COMPLIANT=NO/,
-    patch_part_policy: "AND", # OR or AND
-    repair_prompt: "Incomplete response, reply must contain explicit COMPLIANT=YES or COMPLIANT=NO:",
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.4, seed: 42 }
-    }
+    patch_part_policy: 'AND', # OR or AND
+    repair_prompt: 'Incomplete response, reply must contain explicit COMPLIANT=YES or COMPLIANT=NO:',
+    options: { n_predict: 5, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.4, seed: 42 }
   },
-  "kpatch-build-02" => {
-    ok_regex: /YES/,
-    fail_regex: /NO/,
-    patch_part_policy: "AND", # OR or AND
-    repair_prompt: "Invalid response, reply YES or NO, no other response is valid:",
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
-    }
+  'kpatch-build-02' => {
+    ok_regex: /COMPLIANT=YES/,
+    fail_regex: /COMPLIANT=NO/,
+    patch_part_policy: 'AND', # OR or AND
+    repair_prompt: 'Invalid response, reply COMPLIANT=YES or COMPLIANT=NO, no other response is valid:',
+    options: { n_predict: 8, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
   },
-  "commit-summary" => {
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
-    }
+  'commit-summary' => {
+    options: { n_predict: 500, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
   },
-  "vpsadminos-01" => {
+  'vpsadminos-01' => {
     ok_regex: /ACCEPT/,
     fail_regex: /IGNORE/,
-    patch_part_policy: "OR", # OR or AND
+    patch_part_policy: 'OR', # OR or AND
     repair_prompt: "Conclusion 'ACCEPT'/'IGNORE' (retry %d/%d):",
-    options: {
-      #model: 'llama2:70b',
-      model: 'miqu-1-70b',
-      options: { num_ctx: 2048, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.7, seed: 42 }
-    }
+    options: { n_predict: 5, repeat_penalty: 1.1, repeat_last_n: 64, temperature: 0.6, seed: 42 }
   },
-};
+}
+
+test_commits = [
+  '54be6c6c5ae8e0d93a6c4641cb7528eb0b6ba478': { # Linux 6.8-rc3
+    'bug-01':          'fail',
+    'stable-01':       'fail',
+    'security-01':     'fail',
+    'kpatch-build-01': 'fail',
+    'kpatch-build-02': 'fail',
+    'vpsadminos-01':   'fail',
+  },
+  'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { # Input: i8042 - fix strange behavior of touchpad on Clevo NS70PU
+    'bug-01':          'ok',
+    'stable-01':       'ok',
+    'security-01':     'fail',
+    'kpatch-build-01': 'fail',
+    'kpatch-build-02': 'fail',
+    'vpsadminos-01':   'fail',
+  },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
+  #   'bug-01':          'ok',
+  #   'stable-01':       'ok',
+  #   'security-01':     'fail',
+  #   'kpatch-build-01': 'fail',
+  #   'kpatch-build-02': 'fail',
+  #   'vpsadminos-01':   'fail',
+  # },
+]
+
 #plan = ["bug-01"]
 #plan = ["vpsadminos-01"]
 plan = ["bug-01", "stable-01", "vpsadminos-01", "security-01", "kpatch-build-02"]
 #plan = ["kpatch-build-01"]
 #plan = ["commit-summary", "vpsadminos-01"]
-skip_commit_on_consecutive_fails = 1
+skip_commit_on_consecutive_fails = false
 
 results = {}
 start_time = Time.now
@@ -106,13 +157,13 @@ $csvf = File.open(File.join(log_dir, 'log.csv'), 'a+')
 $csvf.sync = true
 
 def log(message)
-    $logf.puts message
-    puts message
+  $logf.puts message
+  puts message
 end
 
 def logn(message)
-    $logf.print message
-    print message
+  $logf.print message
+  print message
 end
 
 def log_verbose(message)
@@ -120,28 +171,30 @@ def log_verbose(message)
 end
 
 def log_csv(a)
-    message = a.to_csv
-    $csvf.puts message
-    log_verbose(message)
+  message = a.to_csv
+  $csvf.puts message
+  log_verbose(message)
 end
 
 class PromptGenerator
   def initialize(test_file)
     @test = File.read("prompts/#{test_file}.erb")
   end
+
   def generate(params)
     @params = params
     ERB.new(@test).result(binding)
   end
 end
+
 class Spinner
   def initialize
-    #@spinner_chars = ['⣾','⣽','⣻','⢿','⡿','⣟','⣯','⣷']
-    @spinner_chars = ["⠁","⠂","⠄","⡀","⡈","⡐","⡠","⣀",
-                      "⣁","⣂","⣄","⣌","⣔","⣤","⣥","⣦",
-                      "⣮","⣶","⣷","⣿","⡿","⠿","⢟","⠟",
-                      "⡛","⠛","⠫","⢋","⠋","⠍","⡉","⠉",
-                      "⠑","⠡","⢁"]
+    # @spinner_chars = ['⣾','⣽','⣻','⢿','⡿','⣟','⣯','⣷']
+    @spinner_chars = ['⠁', '⠂', '⠄', '⡀', '⡈', '⡐', '⡠', '⣀',
+                      '⣁', '⣂', '⣄', '⣌', '⣔', '⣤', '⣥', '⣦',
+                      '⣮', '⣶', '⣷', '⣿', '⡿', '⠿', '⢟', '⠟',
+                      '⡛', '⠛', '⠫', '⢋', '⠋', '⠍', '⡉', '⠉',
+                      '⠑', '⠡', '⢁']
     @index = 0
     @running = false
     @printed = 0
@@ -150,13 +203,14 @@ class Spinner
 
   def start(length = 1)
     return if @running
+
     @running = true
     @thread = Thread.new do
       loop do
         break unless @running
 
-        length.times { print "#{@spinner_chars[@index]}" }
         @printed = length
+        length.times { print "#{@spinner_chars[@index]}" }
         @index = (@index + 1) % @spinner_chars.length
         sleep 0.08
         @printed.times { print "\b" }
@@ -176,12 +230,13 @@ class Spinner
 end
 spinner = Spinner.new
 
-Signal.trap("INT") do
+
+Signal.trap('INT') do
   spinner.stop
   puts
   exit 1
 end
-Signal.trap("TERM") do
+Signal.trap('TERM') do
   spinner.stop
   puts
   exit 1
@@ -193,14 +248,14 @@ repo_path = '/home/snajpa/linux'
 start_ref, end_ref = ARGV
 
 unless start_ref
-  puts "Error: Please provide start and end refs/tags/branches/commits."
-  puts "Usage: patcheval <start_ref> [<end_ref>]"
+  puts 'Error: Please provide start and end refs/tags/branches/commits.'
+  puts 'Usage: patcheval <start_ref> [<end_ref>]'
   exit(1)
 end
 
-end_ref = start_ref unless end_ref
+end_ref ||= start_ref
 
-def find_commit(repo, user_input)    
+def find_commit(repo, user_input)
   # Attempt to resolve commit directly from SHA or through references
   commit = nil
   begin
@@ -209,14 +264,14 @@ def find_commit(repo, user_input)
   rescue Rugged::InvalidError
     # If direct lookup fails, attempt to find matching reference (branch or tag)
     repo.references.each do |ref|
-      if ref.name.end_with?(user_input) || ref.target == user_input
-        target = ref.target
-        commit = repo.lookup(target.is_a?(String) ? target : ref.target_id)
-        break
-      end
+      next unless ref.name.end_with?(user_input) || ref.target == user_input
+
+      target = ref.target
+      commit = repo.lookup(target.is_a?(String) ? target : ref.target_id)
+      break
     end
   rescue Rugged::ReferenceError
-    puts "Input does not correspond to a valid commit, tag, or branch."
+    puts 'Input does not correspond to a valid commit, tag, or branch.'
   end
   commit
 end
@@ -226,154 +281,177 @@ repo = Rugged::Repository.new(repo_path)
 start_commit = find_commit(repo, start_ref)
 end_commit = find_commit(repo, end_ref)
 
-if (start_commit == end_commit)
-  start_commit = start_commit.parents.first
-end
+start_commit = start_commit.parents.first if start_commit == end_commit
 
 walker = Rugged::Walker.new(repo)
-walker.sorting(Rugged::SORT_DATE | Rugged::SORT_TOPO | Rugged::SORT_REVERSE)
+walker.sorting(Rugged::SORT_DATE)
 walker.push(end_commit)
 walker.hide(start_commit)
 
 log "patcheval.rb: Walking between #{start_ref} and #{end_ref}"
 log "Start commit: #{start_commit.oid}"
 log "End commit:   #{end_commit.oid}"
-log "Walk started at:"
+log 'Walk started at:'
 log "\t#{Time.now.utc}"
 log "\t#{Time.now.localtime}"
-log "Commit test plan: #{plan.join(", ")}"
+log "Commit test plan: #{plan.join(', ')}"
 log "Skip commit on consecutive fails: #{skip_commit_on_consecutive_fails}"
-log ""
+log ''
 
-logn "Total commits: "
+commits = []
+logn 'Total commits: '
 spinner.start 5
 commit_count = 0
-walker.each { commit_count += 1 }
+walker.each do |commit|
+  next if commit.parents.size > 1 # Skip merge commits with no diff
+  commit_count += 1
+  commits << commit
+end
 spinner.stop
 log commit_count
-log ""
+log ''
 
 def response_ok?(response, ok_regex, fail_regex)
-  if response =~ ok_regex && response =~ fail_regex
-    raise "Response matches both OK and FAIL regex"
-  end
+  raise 'Response matches both OK and FAIL regex' if response =~ ok_regex && response =~ fail_regex
+
   if response =~ ok_regex
-    return true
+    true
   elsif response =~ fail_regex
-    return false
+    false
   else
     raise "Unexpected response: #{response}"
   end
 end
 
 commit_n = 0
-
-walker.reset
-walker.sorting(Rugged::SORT_DATE | Rugged::SORT_TOPO | Rugged::SORT_REVERSE)
-walker.push(end_commit)
-walker.hide(start_commit)
-
+total_timings = {'prompt_n' => 0, 'prompt_per_second' => 0, 'predicted_n' => 0, 'predicted_per_second' => 0}
 eta = 0
-walker.each do |commit|
+commits.each do |commit|
   test_n = 0
   commit_n += 1
-  results[commit.oid] = {skipped: true, prompts: {}}
-  next if commit.parents.size > 1 && commit.diff(nil).size == 0 # Skip merge commits with no diff
+  results[commit.oid] = { skipped: true, prompts: {} }
 
   fails = 0
-  log "%s, %3d/%d,  ETA %s, %s %s" % [Time.now.localtime, commit_n, commit_count, Time.at(Time.now + eta), commit.oid, commit.message.lines.first.chomp]
-  if commit.parents.size > 1
-    log "Merge commit"
-    next
-  end
-  response_first = ""
-  response = ""
+  log '%s, %3d/%d,  ETA %s, %s %s' % [Time.now.localtime, commit_n, commit_count, Time.at(Time.now + eta),
+             commit.oid, commit.message.lines.first.chomp]
+
+  response_first = ''
+  response = ''
   plan.each do |test_name|
     test_n += 1
     test = tests[test_name]
     raise "Test not found: #{test_name}" if test.nil?
+
     starting = Time.now
     log_verbose "\n"
-    logn " test: %20s" % "#{test_name} "
+    logn format(' test: %20s', "#{test_name} ")
     spinner.start 12
     prompt_generator = PromptGenerator.new(test_name)
-    ok = test[:patch_part_policy] == "AND"
+    ok = test[:patch_part_policy] == 'AND'
     diff = commit.diff
-    patch_s = ""
+    patch_s = ''
     diff.each_patch do |patch|
       patch_s += patch.to_s + "\n"
     end
     prompts_length = 0
     responses_length = 0
-    prompt = prompt_generator.generate({diff: patch_s.force_encoding("UTF-8"),
-                                        commit: commit.oid,
-                                        message_short: commit.message.lines.first.chomp.force_encoding("UTF-8"),
-                                        message: commit.message.force_encoding("UTF-8"),
-                                        plan_response_prev: response.force_encoding("UTF-8"),
-                                        plan_response_first: response_first.force_encoding("UTF-8")})
-    context = []
+    prompt = prompt_generator.generate({ diff: patch_s.force_encoding('UTF-8'),
+                                         commit: commit.oid,
+                                         message_short: commit.message.lines.first.chomp.force_encoding('UTF-8'),
+                                         message: commit.message.force_encoding('UTF-8'),
+                                         plan_response_prev: response.force_encoding('UTF-8'),
+                                         plan_response_first: response_first.force_encoding('UTF-8') })
     retries = 0
+    timings = {}
+    per_test_timings = {}
+    n_predict = test[:options][:n_predict]
+    seed = test[:options][:seed].nil? ? 42 : test[:options][:seed]
     begin
-      retries += 1
-      url = URI.parse('http://localhost:11434/api/generate')
+      log_verbose "\n\n" + prompt
+      url = URI.parse('http://localhost:8080/completion')
       http = Net::HTTP.new(url.host, url.port)
       request = Net::HTTP::Post.new(url.path)
       request.content_type = 'application/json'
-      request.body = test[:options].merge({prompt: prompt, context: context, stream: false}).to_json
-      result = JSON.parse(http.request(request).body)
-      response = result["response"]
+      request.body = test[:options].merge({ prompt: prompt,
+                                            stream: false,
+                                            n_predict: n_predict,
+                                            seed: seed}).to_json
+      request_result = http.request(request)
+      result = JSON.parse(request_result.body)
+      #log_verbose JSON.pretty_generate(result)
+      response = result['content']
+      #puts "===RESPONSE===\n" + response + "\n===/RESPONSE===\n"
       response_first = response if test_n == 1
-      context = result  ["context"]
-      log_verbose "\n\n" + prompt
+      #context = result['context']
+      timings = result['timings']
+      ['prompt_n', 'prompt_per_second', 'predicted_n', 'predicted_per_second'].each do |key|
+        total_timings[key] = (total_timings[key].nil? ? 0 : total_timings[key]) + timings[key]
+        per_test_timings[key] = (per_test_timings[key].nil? ? 0 : per_test_timings[key]) + timings[key]
+      end
       log_verbose "\n" + response + "\n\n"
-      log_verbose "prompt length: #{prompt.length}"
-      log_verbose "response length: #{response.length}"
-      prompts_length += prompt.length
-      responses_length += response.length
-      if !(test[:ok_regex].nil? || test[:fail_regex].nil?)
-        ok = (test[:patch_part_policy] == "AND") ? (ok && response_ok?(response, test[:ok_regex], test[:fail_regex]))
-                                                 : (ok || response_ok?(response, test[:ok_regex], test[:fail_regex]))
+      unless test[:ok_regex].nil? || test[:fail_regex].nil?
+        ok = if test[:patch_part_policy] == 'AND'
+               ok && response_ok?(response, test[:ok_regex], test[:fail_regex])
+             else
+               ok || response_ok?(response, test[:ok_regex], test[:fail_regex])
+             end
       end
     rescue RuntimeError
+      retries += 1
       log_verbose "Retrying... (#{retries}/5)"
-      prompt = test[:repair_prompt] % [retries, 5]
+      seed = seed + 1
+      prompt += "%s\n" % response
+      prompt += test[:repair_prompt] % [retries, 5]
+      prompt += "\n"
+      n_predict = [500, [50, n_predict].min * retries].max
       if retries < 5
         retry
       else
-        log_verbose "Too many retries, skipping commit"
+        log_verbose 'Too many retries, skipping commit'
         ok = nil
       end
+      rescue EOFError
+        sleep 5
+        retry
+      rescue JSON::ParserError
+        sleep 5
+        retry
+      rescue Errno::ECONNREFUSED
+        sleep 5
+        retry
+      rescue Errno::ECONNRESET
+        sleep 5
+        retry
     end
     spinner.stop
-    res = "unknown"
+    res = 'unknown'
     if ok == true
-      res = "ok"
+      res = 'ok'
     elsif ok == false
-      res = "fail"
+      res = 'fail'
     end
-    if test[:ok_regex].nil? && test[:fail_regex].nil?
-      res = "%5d long" % response.length
-    end
+    res = '%5d long' % response.length if test[:ok_regex].nil? && test[:fail_regex].nil?
     ending = Time.now
     elapsed = ending - starting
     running_time = ending - start_time
     eta = running_time / commit_n * (commit_count - commit_n)
     logn " %10s " % res
     logn "%5.2fs" % elapsed
-    logn "  in: %5d B" % prompts_length
-    logn "  out: %5d B" % responses_length
-    logn "  %7.2f B/s\n" % ((prompts_length + responses_length) / elapsed)
+    logn "    in %5d t" % per_test_timings['prompt_n']
+    logn " %7.2f t/s" % per_test_timings['prompt_per_second']
+    logn "    out %5d t" % per_test_timings['predicted_n']
+    logn " %7.2f t/s" % per_test_timings['predicted_per_second']
+    logn "    avg %7.2f t/s" % ((total_timings['prompt_n'] + total_timings['predicted_n']) / (running_time))
+    logn " tot %5st in %5st out\n" % [total_timings['prompt_n'].si, total_timings['predicted_n'].si]
     log_csv [commit.oid, commit.message.lines.first.chomp, test_name, res, prompts_length, responses_length, elapsed]
-    results[commit.oid][:prompts][test_name] = {result: res, elapsed: elapsed}
-    if !!skip_commit_on_consecutive_fails && ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
-      fails = 0
-    end
-    if !!skip_commit_on_consecutive_fails && !ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
-      fails += 1
-      if fails >= skip_commit_on_consecutive_fails
-        log_verbose "Skipping commit due to consecutive fails"
-        break
-      end
+    results[commit.oid][:prompts][test_name] = { result: res, elapsed: elapsed }
+    fails = 0 if !!skip_commit_on_consecutive_fails && ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
+    next unless !!skip_commit_on_consecutive_fails && !ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
+
+    fails += 1
+    if fails >= skip_commit_on_consecutive_fails
+      log_verbose 'Skipping commit due to consecutive fails'
+      break
     end
   end
   results[commit.oid][:skipped] = false

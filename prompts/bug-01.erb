@@ -4,8 +4,16 @@ Patch in question:
 
 <%= @params[:message] %>
 
+<%= @params[:diff] %>
+
 Does this patch fix a bug? Does it repair a software defect or fault?
 
 Is there any out of bounds access, buffer overflow, or other security issue that this patch could fix?
 
-RESULT: Provide a single-word response (either 'BUGFIX' or 'NOT') and nothing else. Do not provide any explanation, note or justification before or after this line.
+Provide a single-word response (either 'BUGFIX' or 'NOT') with a brief explanation.
+
+Response template
+Outcome: (BUGFIX/NOT)
+(explanation)
+
+Outcome: 

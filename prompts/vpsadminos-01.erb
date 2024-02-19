@@ -1,6 +1,6 @@
-KERNEL PATCH EVALUATION REPORT
+KERNEL COMMIT EVALUATION REPORT
 
-For the following patch:
+For the following Commit:
 
 Commit Message:
 
@@ -13,39 +13,49 @@ Commit Diff:
 
 An Analysis is required.
 
-Exclude when the patch is mostly related to these Exclusion Categories:
+Commit is ignored whenever the Commit brings changes to these Exclusion Categories:
+- Other than x86 hardware (like ARM, PowerPC, RISC-V, etc.)
 - Local Disk-based Filesystems (like ext4, xfs, btrfs, f2fs, etc.)
 - Graphics
 - drm, display
 - sound, audio, usb, media drivers
 - wifi, nfc, bluetooth, other wireless drivers
-- Other than x86 hardware (like ARM, PowerPC, RISC-V, etc.)
-- Documentation, tests
+- Documentation/
+- tests, selftests
 End of Exclude Categories.
 
-Include when the patch is related to Interest Areas:
+Commit is accepted if the Commit is brings changes to these Interest Areas:
 + Namespaces, Cgroups
-+ Process management
-+ Resource isolation
++ Process management/lifetime, scheduling
++ Core memory management, allocator, compaction
 + Networking protocols related fixes, TCP/IP stack, 10G/25G ethernet drivers
 + Netfilter
++ netlink, rtnetlink, netdev, ethtool, tc, qdiscs
++ tracing, kprobes, ftrace, perf, livepatch
++ kernfs, sysfs, procfs, debugfs
++ NFSv3, NFSv4, NFSv4.1, NFSv4.2
 End of Interest Areas.
 
 Evaluation Procedure:
-- Check the patch for any of the Exclusion Categories.
-- Check the patch for any of the Interest Areas.
-- If the patch isn't in the Exclusion Categories and is in the Interest Areas, 'ACCEPT' the patch.
-- If the patch is in the Exclusion Categories, 'IGNORE' the patch.
-- 'IGNORE' all other patches.
+
+- Exclusion Categories are evaluated first and have precedence over Interest Areas.
+
+- Check the Commit for any of the Exclusion Categories.
+- Check the Commit for any of the Interest Areas.
+- If the Commit isn't in the Exclusion Categories and is in the Interest Areas, 'ACCEPT' the Commit.
+- If the Commit is in the Exclusion Categories, 'IGNORE' the Commit.
+
+- 'IGNORE' all other Commits.
+
 End of Evaluation Procedure.
 
 An outcome of this Analysis is required.
 
 Report template:
 
-Confidence: [HIGH/MEDIUM/LOW]
 Outcome: [IGNORE/ACCEPT]
+Confidence: [HIGH/MEDIUM/LOW]
 
 One sentence explanation (optional):
 
-FINAL REPORT:
+Outcome: 
