@@ -8,6 +8,7 @@ require 'erb'
 require 'csv'
 require 'fileutils'
 
+# cmake .. -DLLAMA_CUBLAS=ON -DCMAKE_CUDA_ARCHITECTURES="80;86" -DLLAMA_CUDA_MMV_Y=1 -DLLAMA_CUDA_DMMV_X=4096 -DCMAKE_BUILD_TYPE=Release -DLLAMA_CUDA_PEER_MAX_BATCH_SIZE=1024
 # llama.cpp/build$ ./bin/server -m ~/models/miqu-1-70b/miqu-1-70b.q4_k_m.gguf -ts 10,13 -ngl 99 --mlock -b 1024 -mg 1 -c 4096
 
 tests = {
@@ -58,81 +59,6 @@ tests = {
   },
 }
 
-test_commits = [
-  '54be6c6c5ae8e0d93a6c4641cb7528eb0b6ba478': { # Linux 6.8-rc3
-    'bug-01':          'fail',
-    'stable-01':       'fail',
-    'security-01':     'fail',
-    'kpatch-build-01': 'fail',
-    'kpatch-build-02': 'fail',
-    'vpsadminos-01':   'fail',
-  },
-  'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { # Input: i8042 - fix strange behavior of touchpad on Clevo NS70PU
-    'bug-01':          'ok',
-    'stable-01':       'ok',
-    'security-01':     'fail',
-    'kpatch-build-01': 'fail',
-    'kpatch-build-02': 'fail',
-    'vpsadminos-01':   'fail',
-  },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-  # 'a60e6c3918d20848906ffcdfcf72ca6a8cfbcf2e': { #
-  #   'bug-01':          'ok',
-  #   'stable-01':       'ok',
-  #   'security-01':     'fail',
-  #   'kpatch-build-01': 'fail',
-  #   'kpatch-build-02': 'fail',
-  #   'vpsadminos-01':   'fail',
-  # },
-]
-
 #plan = ["bug-01"]
 #plan = ["vpsadminos-01"]
 plan = ["bug-01", "stable-01", "vpsadminos-01", "security-01", "kpatch-build-02"]
@@ -147,14 +73,17 @@ start_time = Time.now
 dir = Time.now.strftime('%Y-%m-%d_%H-%M-%S_%Z')
 log_dir = File.join('./logs', dir)
 FileUtils.mkdir_p(log_dir)
-# Update symlink to point to the new log directory
-File.unlink('logs/_current') if File.exist?('logs/_current')
-FileUtils.ln_sf(dir, './logs/_current')
 log_file = File.join(log_dir, 'log.txt')
 $logf = File.open(log_file, 'a+')
 $logf.sync = true
 $csvf = File.open(File.join(log_dir, 'log.csv'), 'a+')
 $csvf.sync = true
+
+# Update symlinkgs in logs directory, so that the latest logs are always available
+# in _latest and _previous
+FileUtils.rm_f('./logs/_previous')
+FileUtils.mv('./logs/_latest', './logs/_previous') if File.exist?('./logs/_latest')
+FileUtils.ln_s(dir, './logs/_latest')
 
 def log(message)
   $logf.puts message
@@ -443,7 +372,7 @@ commits.each do |commit|
     logn " %7.2f t/s" % per_test_timings['predicted_per_second']
     logn "    avg %7.2f t/s" % ((total_timings['prompt_n'] + total_timings['predicted_n']) / (running_time))
     logn " tot %5st in %5st out\n" % [total_timings['prompt_n'].si, total_timings['predicted_n'].si]
-    log_csv [commit.oid, commit.message.lines.first.chomp, test_name, res, prompts_length, responses_length, elapsed]
+    log_csv [commit.oid, commit.message.lines.first.chomp, test_name, res, per_test_timings['prompt_n'], per_test_timings['predicted_n'], elapsed]
     results[commit.oid][:prompts][test_name] = { result: res, elapsed: elapsed }
     fails = 0 if !!skip_commit_on_consecutive_fails && ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
     next unless !!skip_commit_on_consecutive_fails && !ok && !test[:ok_regex].nil? && !test[:fail_regex].nil?
